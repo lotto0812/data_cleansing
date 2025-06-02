@@ -29,9 +29,12 @@ class GSIGeocoder:
             if results and len(results) > 0:
                 # 最も関連性の高い結果を使用
                 result = results[0]
+                coordinates = result['geometry']['coordinates']
+                
+                # 国土地理院APIは [経度, 緯度] の順で返すので注意
                 return {
-                    'lat': result['geometry']['coordinates'][1],
-                    'lng': result['geometry']['coordinates'][0],
+                    'lat': float(coordinates[1]),  # 緯度
+                    'lng': float(coordinates[0]),  # 経度
                     'original_address': address,
                     'normalized_address': normalized_address,
                     'matched_address': result.get('properties', {}).get('title', '')
@@ -39,6 +42,8 @@ class GSIGeocoder:
             
         except requests.exceptions.RequestException as e:
             print(f"Error geocoding address '{address}': {str(e)}")
+        except (KeyError, IndexError, ValueError) as e:
+            print(f"Error parsing response for address '{address}': {str(e)}")
         
         return None
     
@@ -49,19 +54,26 @@ class GSIGeocoder:
                      interval: float = 0.5) -> pd.DataFrame:
         """複数の住所を一括で緯度経度に変換"""
         results = []
+        total = len(addresses)
         
-        for item in addresses:
+        for i, item in enumerate(addresses, 1):
             address = item[address_key]
             name = item.get(name_key, '') if name_key else ''
+            
+            print(f"\r処理中... {i}/{total} ({(i/total)*100:.1f}%)", end='')
             
             result = self.geocode(address)
             if result:
                 result['name'] = name
                 results.append(result)
+            else:
+                print(f"\n変換失敗: {address}")
             
             # APIリクエスト間隔を制御
-            time.sleep(interval)
+            if i < total:  # 最後の要素以外で待機
+                time.sleep(interval)
         
+        print("\n処理完了")
         return pd.DataFrame(results)
 
 def generate_map_html(df: pd.DataFrame, output_file: str = 'map.html'):

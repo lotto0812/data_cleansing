@@ -21,8 +21,8 @@ class JapaneseAddressNormalizer:
         # 町丁目の正規表現パターン
         self.chome_patterns = {
             r'(\d+)\s*(?:丁目|丁|－|ー|の)': r'\1丁目',
-            r'(\d+)\s*(?:番地?|番号?|－|ー|の)': r'\1番',
-            r'(\d+)\s*(?:号|－|ー|の)': r'\1号',
+            r'(\d+)\s*(?:番地?|番号?|－|ー|の)(?!\d)': r'\1番',
+            r'(\d+)\s*(?:号|－|ー|の)(?!\d)': r'\1号',
         }
         
         # 建物名の正規化パターン
@@ -68,7 +68,7 @@ class JapaneseAddressNormalizer:
     def _normalize_prefecture(self, address: str) -> str:
         """都道府県名を正規化"""
         for pattern, replacement in self.prefecture_patterns.items():
-            address = re.sub(pattern, replacement, address)
+            address = re.sub(f"^{pattern}", replacement, address)
         return address
 
     def _normalize_chome_banchi(self, address: str) -> str:
