@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 日本の住所ジオコーディングツール
 
 国土地理院の住所検索APIを使用して、日本の住所を緯度経度に変換するPythonツールです。
@@ -83,3 +84,7 @@ MIT License
 ## 謝辞
 
 このツールは[国土地理院](https://www.gsi.go.jp/)の住所検索APIを使用しています。 
+=======
+# data_cleansing
+cleansing for adress, number, ....
+>>>>>>> 2d24cbc1b96d4ecc4204612487e55575553093ec
