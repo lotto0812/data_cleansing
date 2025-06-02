@@ -1,149 +1,119 @@
-import pandas as pd
 import requests
+import pandas as pd
+import folium
 import time
-from typing import Dict, List, Optional
-import json
+from typing import Dict, List, Optional, Union
+from address_normalizer import JapaneseAddressNormalizer
 
 class GSIGeocoder:
-    """国土地理院のジオコーディングAPIを使用するクラス"""
+    """国土地理院APIを使用した住所ジオコーディングクラス"""
     
     def __init__(self):
         self.base_url = "https://msearch.gsi.go.jp/address-search/AddressSearch"
+        self.normalizer = JapaneseAddressNormalizer()
     
-    def geocode(self, address: str) -> Optional[Dict[str, float]]:
-        """
-        住所を緯度経度に変換
+    def geocode(self, address: str) -> Optional[Dict[str, Union[float, str]]]:
+        """単一の住所を緯度経度に変換"""
+        # 住所の正規化
+        normalized_address = self.normalizer.normalize_address(address)
         
-        Args:
-            address: 変換したい住所
-            
-        Returns:
-            成功時: {'lat': 緯度, 'lng': 経度}
-            失敗時: None
-        """
+        params = {
+            "q": normalized_address
+        }
+        
         try:
-            # 建物名や階数を除去（より正確な検索のため）
-            address = address.split(' ')[0]
-            
-            # APIリクエスト
-            response = requests.get(
-                self.base_url,
-                params={'q': address}
-            )
+            response = requests.get(self.base_url, params=params)
             response.raise_for_status()
-            
             results = response.json()
+            
             if results and len(results) > 0:
-                coordinates = results[0]['geometry']['coordinates']
+                # 最も関連性の高い結果を使用
+                result = results[0]
                 return {
-                    'lng': coordinates[0],  # 経度
-                    'lat': coordinates[1]   # 緯度
+                    'lat': result['geometry']['coordinates'][1],
+                    'lng': result['geometry']['coordinates'][0],
+                    'original_address': address,
+                    'normalized_address': normalized_address,
+                    'matched_address': result.get('properties', {}).get('title', '')
                 }
-        except Exception as e:
-            print(f"Error geocoding address: {str(e)}")
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Error geocoding address '{address}': {str(e)}")
         
         return None
     
-    def batch_geocode(self, addresses: List[Dict[str, str]], 
+    def batch_geocode(self, 
+                     addresses: List[Dict[str, str]], 
                      address_key: str = 'address',
                      name_key: Optional[str] = None,
                      interval: float = 0.5) -> pd.DataFrame:
-        """
-        複数の住所を一括で緯度経度に変換
-        
-        Args:
-            addresses: 住所情報を含む辞書のリスト
-            address_key: 住所が格納されているキー名
-            name_key: 名称が格納されているキー名（オプション）
-            interval: リクエスト間隔（秒）
-            
-        Returns:
-            変換結果のDataFrame
-        """
+        """複数の住所を一括で緯度経度に変換"""
         results = []
         
-        for i, addr_dict in enumerate(addresses):
-            address = addr_dict[address_key]
-            name = addr_dict.get(name_key) if name_key else None
-            
-            print(f"\n処理中 ({i+1}/{len(addresses)}): {name if name else address}")
+        for item in addresses:
+            address = item[address_key]
+            name = item.get(name_key, '') if name_key else ''
             
             result = self.geocode(address)
             if result:
-                row = {
-                    'address': address,
-                    'lat': result['lat'],
-                    'lng': result['lng']
-                }
-                if name_key:
-                    row['name'] = addr_dict[name_key]
-                    
-                results.append(row)
-                print(f"変換成功: 緯度 {result['lat']}, 経度 {result['lng']}")
-            else:
-                print(f"変換失敗: {address}")
+                result['name'] = name
+                results.append(result)
             
-            # APIの負荷を考慮して待機
-            if i < len(addresses) - 1:  # 最後の要素以外で待機
-                time.sleep(interval)
+            # APIリクエスト間隔を制御
+            time.sleep(interval)
         
         return pd.DataFrame(results)
 
-def generate_map_html(df: pd.DataFrame, output_file: str = 'locations_map.html'):
-    """
-    緯度経度データから地図を生成
+def generate_map_html(df: pd.DataFrame, output_file: str = 'map.html'):
+    """ジオコーディング結果を地図に表示"""
+    if df.empty:
+        print("No data to display on map")
+        return
     
-    Args:
-        df: 緯度経度データを含むDataFrame（必須カラム: lat, lng）
-        output_file: 出力するHTMLファイル名
-    """
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Locations Map</title>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-        <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-        <style>
-            #map { height: 600px; }
-            .attribution { font-size: 12px; margin: 5px; }
-        </style>
-    </head>
-    <body>
-        <div id="map"></div>
-        <div class="attribution">住所データ：国土地理院</div>
-        <script>
-            var map = L.map('map').setView([35.6762, 139.6503], 12);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }).addTo(map);
-    """
+    # 中心座標を計算
+    center_lat = df['lat'].mean()
+    center_lng = df['lng'].mean()
+    
+    # 地図を作成
+    m = folium.Map(location=[center_lat, center_lng], zoom_start=12)
     
     # マーカーを追加
     for _, row in df.iterrows():
-        popup_content = row['name'] if 'name' in row else row['address']
-        html_content += f"""
-            L.marker([{row['lat']}, {row['lng']}])
-                .bindPopup('{popup_content}<br>{row['address']}')
-                .addTo(map);
-        """
+        popup_text = f"{row.get('name', '')}<br>{row['matched_address']}"
+        folium.Marker(
+            [row['lat'], row['lng']],
+            popup=popup_text,
+            tooltip=row.get('name', row['matched_address'])
+        ).add_to(m)
     
-    html_content += """
-        </script>
-    </body>
-    </html>
-    """
+    # 国土地理院の利用規約に基づく出典表示
+    attribution = ('地理院地図の住所検索API (https://msearch.gsi.go.jp/address-search/AddressSearch) を使用'
+                  '<br>出典：国土地理院')
     
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(html_content)
-    print(f"\n地図を{output_file}に保存しました。")
+    # 出典情報を地図に追加
+    m.get_root().html.add_child(folium.Element(
+        f'<div style="position: fixed; bottom: 10px; left: 10px; '
+        f'background-color: white; padding: 5px; border-radius: 5px; '
+        f'z-index: 1000;">{attribution}</div>'
+    ))
+    
+    # 地図を保存
+    m.save(output_file)
 
-# 使用例
 if __name__ == "__main__":
-    # サンプルデータ
-    sample_locations = [
+    # 使用例
+    geocoder = GSIGeocoder()
+    
+    # 単一の住所のジオコーディング
+    result = geocoder.geocode("東京都渋谷区渋谷2-24-12")
+    if result:
+        print(f"単一住所の結果:")
+        print(f"緯度: {result['lat']}, 経度: {result['lng']}")
+        print(f"正規化された住所: {result['normalized_address']}")
+        print(f"マッチした住所: {result['matched_address']}\n")
+    
+    # 複数の住所の一括ジオコーディング
+    test_addresses = [
         {
             'name': '渋谷スクランブルスクエア',
             'address': '東京都渋谷区渋谷2-24-12'
@@ -154,18 +124,16 @@ if __name__ == "__main__":
         }
     ]
     
-    # ジオコーディング実行
-    geocoder = GSIGeocoder()
     results_df = geocoder.batch_geocode(
-        sample_locations,
+        test_addresses,
         address_key='address',
-        name_key='name'
+        name_key='name',
+        interval=0.5
     )
     
-    # 結果を保存
     if not results_df.empty:
-        results_df.to_csv('geocoding_results.csv', index=False, encoding='utf-8')
-        print("\n結果をgeocoding_results.csvに保存しました。")
+        print("複数住所の結果:")
+        print(results_df)
         
-        # 地図生成
-        generate_map_html(results_df) 
+        # 地図を生成
+        generate_map_html(results_df, 'example_map.html') 
