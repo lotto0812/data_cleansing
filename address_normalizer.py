@@ -18,6 +18,17 @@ class JapaneseAddressNormalizer:
             # 他の道府県も同様に追加可能
         }
         
+        # 政令指定都市の正規表現パターン
+        self.city_patterns = {
+            r'大阪市': '大阪市',
+            r'京都市': '京都市',
+            r'神戸市': '神戸市',
+            r'名古屋市': '名古屋市',
+            r'横浜市': '横浜市',
+            r'札幌市': '札幌市',
+            # 他の政令指定都市も同様に追加可能
+        }
+        
         # 町丁目の正規表現パターン
         self.chome_patterns = {
             r'(\d+)\s*(?:丁目|丁|－|ー|の)': r'\1丁目',
@@ -31,17 +42,25 @@ class JapaneseAddressNormalizer:
             r'マンション': 'マンション',
             r'アパート': 'アパート',
         }
-        
-        # 政令指定都市の正規表現パターン
-        self.city_patterns = {
-            r'大阪市': '大阪市',
-            r'京都市': '京都市',
-            r'神戸市': '神戸市',
-            r'名古屋市': '名古屋市',
-            r'横浜市': '横浜市',
-            r'札幌市': '札幌市',
-            # 他の政令指定都市も同様に追加可能
-        }
+
+    def _extract_house_number(self, address: str) -> tuple[str, str]:
+        """住所から番地号を抽出し、残りの住所と番地号を返す"""
+        number_match = re.search(r'([0-9-]+)(?:番地?|号)?$', address)
+        if number_match:
+            number = number_match.group(1)
+            base_address = address[:number_match.start()].strip()
+            return base_address, number
+        return address, ""
+
+    def _normalize_house_number(self, number: str) -> str:
+        """番地号を正規化"""
+        if not number:
+            return ""
+        # ハイフン区切りの番号を処理
+        parts = number.split('-')
+        if len(parts) >= 2:
+            return f"{parts[0]}番{'-'.join(parts[1:])}号"
+        return f"{number}番"
 
     def normalize_address(self, address: str) -> str:
         """住所文字列を正規化する"""
@@ -51,16 +70,32 @@ class JapaneseAddressNormalizer:
         # 基本的な正規化
         address = self._basic_normalization(address)
         
+        # 番地号を抽出
+        base_address, house_number = self._extract_house_number(address)
+        
         # 都道府県の正規化
-        address = self._normalize_prefecture(address)
+        normalized_address = self._normalize_prefecture(base_address)
+        
+        # 政令指定都市の処理
+        for pattern, replacement in self.city_patterns.items():
+            if re.search(pattern, normalized_address):
+                # 都道府県名の後に市名を挿入
+                normalized_address = re.sub(
+                    f"^({list(self.prefecture_patterns.values())[0]}|{list(self.prefecture_patterns.values())[1]}|{list(self.prefecture_patterns.values())[2]})",
+                    f"\\1{replacement}",
+                    normalized_address
+                )
         
         # 町丁目番地の正規化
-        address = self._normalize_chome_banchi(address)
+        for pattern, replacement in self.chome_patterns.items():
+            normalized_address = re.sub(pattern, replacement, normalized_address)
         
-        # 建物名の正規化
-        address = self._normalize_building(address)
+        # 正規化された番地号を追加
+        if house_number:
+            normalized_house_number = self._normalize_house_number(house_number)
+            normalized_address = f"{normalized_address}{normalized_house_number}"
         
-        return address.strip()
+        return normalized_address.strip()
 
     def _basic_normalization(self, text: str) -> str:
         """基本的なテキスト正規化を行う"""
@@ -81,24 +116,6 @@ class JapaneseAddressNormalizer:
         for pattern, replacement in self.prefecture_patterns.items():
             address = re.sub(f"^{pattern}", replacement, address)
         
-        # 政令指定都市の処理
-        for pattern, replacement in self.city_patterns.items():
-            if re.search(pattern, address):
-                # 都道府県名の後に市名を挿入
-                address = re.sub(f"^({list(self.prefecture_patterns.values())[0]}|{list(self.prefecture_patterns.values())[1]}|{list(self.prefecture_patterns.values())[2]})(.+)?", f"\\1{replacement}\\2", address)
-        
-        return address
-
-    def _normalize_chome_banchi(self, address: str) -> str:
-        """町丁目・番地・号を正規化"""
-        for pattern, replacement in self.chome_patterns.items():
-            address = re.sub(pattern, replacement, address)
-        return address
-
-    def _normalize_building(self, address: str) -> str:
-        """建物名を正規化"""
-        for pattern, replacement in self.building_patterns.items():
-            address = re.sub(pattern, replacement, address)
         return address
 
     def extract_components(self, address: str) -> Dict[str, Optional[str]]:

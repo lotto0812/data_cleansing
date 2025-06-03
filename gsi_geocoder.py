@@ -18,11 +18,8 @@ class GSIGeocoder:
         # 住所の正規化
         normalized_address = self.normalizer.normalize_address(address)
         
-        # 元の号番号を抽出
-        original_number = None
-        number_match = re.search(r'(\d+(?:-\d+)+)$', address)
-        if number_match:
-            original_number = number_match.group(1)
+        # 元の住所から番地号を抽出
+        base_address, house_number = self.normalizer._extract_house_number(address)
         
         params = {
             "q": normalized_address
@@ -39,13 +36,12 @@ class GSIGeocoder:
                 coordinates = result['geometry']['coordinates']
                 matched_address = result.get('properties', {}).get('title', '')
                 
-                # 号番号が欠落している場合、元の番号を追加
-                if original_number and not re.search(rf'{original_number}(?:号|番地?)', matched_address):
-                    # 番地がある場合は、その後に号番号を追加
+                # マッチした住所に番地号を追加
+                if house_number and not re.search(rf'{house_number}(?:番地?|号)', matched_address):
                     if '番地' in matched_address:
-                        matched_address = f"{matched_address}-{original_number}"
+                        matched_address = f"{matched_address}-{house_number}"
                     else:
-                        matched_address = f"{matched_address}{original_number}号"
+                        matched_address = f"{matched_address}{house_number}号"
                 
                 return {
                     'lat': float(coordinates[1]),  # 緯度
