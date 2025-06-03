@@ -15,19 +15,9 @@ class ProgressTracker:
     
     def update(self, message):
         self.current += 1
-        elapsed_time = time.time() - self.start_time
-        avg_time = elapsed_time / self.current if self.current > 0 else 0
-        remaining = avg_time * (self.total - self.current)
-        
-        # 進捗バーの作成（幅20文字）
-        progress = self.current / self.total
-        bar_width = 20
-        filled = int(bar_width * progress)
-        bar = '=' * filled + '-' * (bar_width - filled)
-        
-        # 進捗情報の表示（同じ行を上書き）
-        sys.stdout.write(f'\r[{bar}] {self.current}/{self.total} ({progress*100:.1f}%) '
-                        f'残り約{remaining:.0f}秒 | {message}')
+        # 進捗情報は最終行のみ更新
+        progress = self.current / self.total * 100
+        sys.stdout.write(f'\r処理進捗: {self.current}/{self.total} ({progress:.1f}%)')
         sys.stdout.flush()
         
         if self.current == self.total:
@@ -41,28 +31,26 @@ def main():
     
     total_count = len(df)
     print(f"読み込み完了: {total_count}件")
-    print("\n=== 変換前の住所サンプル ===")
-    print(df[['store_code', 'name', 'address']].head())
     
     # 進捗トラッカーの初期化
     progress = ProgressTracker(total_count)
     
     def progress_callback(store_name: str, address: str, result: dict) -> None:
         """住所処理の進捗を表示するコールバック関数"""
-        # 類似度が0.2未満の場合は詳細を表示
+        # 類似度が0.2未満の場合のみ詳細を表示
         similarity = result.get('similarity', 0.0)
         store_code = result.get('store_code', '不明')
-        message = f"処理中: [{store_code}] {store_name}"
         
         if similarity < 0.2:
-            print(f"\n\n低類似度アラート（{similarity:.2f}）:")
+            print(f"\n低類似度アラート（{similarity:.2f}）:")
             print(f"店舗コード: {store_code}")
             print(f"店舗名: {store_name}")
             print(f"入力住所: {address}")
             print(f"マッチした住所: {result.get('matched_address', '不明')}")
-            print(f"緯度経度: {result.get('latitude', '不明')}, {result.get('longitude', '不明')}\n")
+            print(f"緯度経度: {result.get('latitude', '不明')}, {result.get('longitude', '不明')}")
         
-        progress.update(message)
+        # 進捗バーの更新（表示なし）
+        progress.update("")
     
     # 緯度経度の取得
     print("\n住所の緯度経度を取得中...")

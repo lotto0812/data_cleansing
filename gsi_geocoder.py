@@ -46,7 +46,6 @@ class GsiGeocoder:
         
         # キャッシュをチェック
         if cache_key in self.cache:
-            print(f"Cache hit for: {address} ({store_name or 'Unknown store'})")
             return self.cache[cache_key], True
         
         try:
@@ -64,7 +63,6 @@ class GsiGeocoder:
             results = response.json()
             
             if not results:
-                print(f"No results found for address: {address}")
                 return None, False
             
             # 最も類似度の高い結果を選択
