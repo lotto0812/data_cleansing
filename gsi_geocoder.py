@@ -18,9 +18,6 @@ class GSIGeocoder:
         # 住所の正規化
         normalized_address = self.normalizer.normalize_address(address)
         
-        # 元の住所から番地号を抽出
-        base_address, house_number = self.normalizer._extract_house_number(address)
-        
         params = {
             "q": normalized_address
         }
@@ -36,19 +33,12 @@ class GSIGeocoder:
                 coordinates = result['geometry']['coordinates']
                 matched_address = result.get('properties', {}).get('title', '')
                 
-                # マッチした住所に番地号を追加
-                if house_number and not re.search(rf'{house_number}(?:番地?|号)', matched_address):
-                    if '番地' in matched_address:
-                        matched_address = f"{matched_address}-{house_number}"
-                    else:
-                        matched_address = f"{matched_address}{house_number}号"
-                
                 return {
                     'lat': float(coordinates[1]),  # 緯度
                     'lng': float(coordinates[0]),  # 経度
                     'original_address': address,
                     'normalized_address': normalized_address,
-                    'matched_address': matched_address
+                    'matched_address': matched_address  # 国土地理院APIからの生の住所データ
                 }
             
         except requests.exceptions.RequestException as e:

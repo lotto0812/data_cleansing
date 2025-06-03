@@ -56,11 +56,16 @@ class JapaneseAddressNormalizer:
         """番地号を正規化"""
         if not number:
             return ""
+        
         # ハイフン区切りの番号を処理
         parts = number.split('-')
-        if len(parts) >= 2:
-            return f"{parts[0]}番{'-'.join(parts[1:])}号"
-        return f"{number}番"
+        
+        if len(parts) == 3:  # 1-3-16 形式
+            return f"{parts[0]}丁目{parts[1]}番{parts[2]}号"
+        elif len(parts) == 2:  # 3-16 形式
+            return f"{parts[0]}番{parts[1]}号"
+        else:  # 単独の番号
+            return f"{number}番"
 
     def normalize_address(self, address: str) -> str:
         """住所文字列を正規化する"""
@@ -105,9 +110,13 @@ class JapaneseAddressNormalizer:
         text = normalize('NFKC', text)
         # 郵便番号を削除
         text = re.sub(r'〒\d{3}-?\d{4}|郵便番号\d{3}-?\d{4}', '', text)
+        # 文頭の「・」を削除
+        text = re.sub(r'^[・]+', '', text)
+        # 特殊文字（☆、★、※など）を削除
+        text = re.sub(r'[☆★※♪♡♥❤︎❀✿✽✾✤✣❉❋❆❅⭐️]+', '', text)
         # 複数の空白を1つに
         text = re.sub(r'\s+', ' ', text)
-        return text
+        return text.strip()
 
     def extract_components(self, address: str) -> Dict[str, Optional[str]]:
         """住所から構成要素を抽出する"""
