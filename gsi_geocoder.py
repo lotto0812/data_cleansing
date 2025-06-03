@@ -1,175 +1,191 @@
-import requests
-import pandas as pd
-import folium
-import time
-from typing import Dict, List, Optional, Union
-from address_normalizer import JapaneseAddressNormalizer
-import re
-from datetime import datetime
 import csv
+import json
+import time
+import requests
+import os
+import pandas as pd
+from typing import Dict, List, Optional, Tuple, Union
+from address_utils import normalize_address_numbers, calculate_address_similarity, analyze_address_match_level
 
-class GSIGeocoder:
-    """国土地理院APIを使用した住所ジオコーディングクラス"""
+class GsiGeocoder:
+    """国土地理院APIを使用して住所から緯度経度を取得するクラス"""
     
     def __init__(self):
-        self.normalizer = JapaneseAddressNormalizer()
         self.base_url = "https://msearch.gsi.go.jp/address-search/AddressSearch"
-        self.results = []
-        self.batch_size = 10000
-        self.batch_num = 1
+        self.cache_file = "geocoding_cache.json"
+        self.cache = self._load_cache()
     
-    def geocode(self, address: str) -> Optional[Dict]:
-        """住所をジオコーディング"""
-        # 住所の正規化
-        normalized_address = self.normalizer.normalize_address(address)
+    def _load_cache(self) -> Dict:
+        """キャッシュファイルを読み込む"""
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except:
+                return {}
+        return {}
+    
+    def _save_cache(self):
+        """キャッシュをファイルに保存"""
+        with open(self.cache_file, 'w', encoding='utf-8') as f:
+            json.dump(self.cache, f, ensure_ascii=False, indent=2)
+    
+    def _make_cache_key(self, address: str, store_code: str = None, store_name: str = None) -> str:
+        """キャッシュのキーを生成"""
+        key_parts = [normalize_address_numbers(address)]
+        if store_code:
+            key_parts.append(str(store_code))
+        if store_name:
+            key_parts.append(str(store_name))
+        return "||".join(key_parts)
+    
+    def geocode(self, address: str, store_code: str = None, store_name: str = None) -> Tuple[Optional[Dict], bool]:
+        """住所から緯度経度を取得"""
+        # キャッシュのキーを生成
+        cache_key = self._make_cache_key(address, store_code, store_name)
         
-        params = {
-            "q": normalized_address
-        }
+        # キャッシュをチェック
+        if cache_key in self.cache:
+            print(f"Cache hit for: {address} ({store_name or 'Unknown store'})")
+            return self.cache[cache_key], True
         
         try:
+            # 住所を正規化
+            normalized_address = normalize_address_numbers(address)
+            
+            # APIリクエストパラメータ
+            params = {'q': normalized_address}
+            
+            # APIリクエスト
             response = requests.get(self.base_url, params=params)
             response.raise_for_status()
-            data = response.json()
             
-            if data and len(data) > 0:
-                result = data[0]
-                return {
-                    "latitude": float(result.get("geometry", {}).get("coordinates", [])[1]),
-                    "longitude": float(result.get("geometry", {}).get("coordinates", [])[0]),
-                    "normalized_address": normalized_address,
-                    "matched_address": result.get("properties", {}).get("title", ""),
-                    "raw_response": result  # 生データを追加
-                }
+            # レスポンスを解析
+            results = response.json()
+            
+            if not results:
+                print(f"No results found for address: {address}")
+                return None, False
+            
+            # 最も類似度の高い結果を選択
+            best_match = None
+            highest_similarity = -1
+            
+            for result in results:
+                matched_address = result.get('properties', {}).get('title', '')
+                similarity = calculate_address_similarity(normalized_address, matched_address)
+                
+                if similarity > highest_similarity:
+                    highest_similarity = similarity
+                    best_match = result
+            
+            if best_match:
+                # 緯度経度を取得
+                coordinates = best_match.get('geometry', {}).get('coordinates', [])
+                matched_address = best_match.get('properties', {}).get('title', '')
+                
+                if len(coordinates) >= 2:
+                    # 住所のマッチングレベルを分析
+                    match_level = analyze_address_match_level(normalized_address, matched_address)
+                    
+                    result = {
+                        'latitude': coordinates[1],
+                        'longitude': coordinates[0],
+                        'normalized_address': normalized_address,
+                        'matched_address': matched_address,
+                        'similarity': highest_similarity,
+                        'chome_match': match_level['chome_match'],
+                        'banchi_match': match_level['banchi_match'],
+                        'go_match': match_level['go_match'],
+                        'store_code': store_code,
+                        'store_name': store_name
+                    }
+                    
+                    # 結果をキャッシュに保存
+                    self.cache[cache_key] = result
+                    self._save_cache()
+                    
+                    return result, False
+            
+            return None, False
+            
         except Exception as e:
-            print(f"Error geocoding {address}: {str(e)}")
-        return None
-    
-    def process_addresses(self, input_file: str):
-        """住所を一括処理"""
-        try:
-            with open(input_file, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                
-                for row in reader:
-                    address = row['address']
-                    name = row.get('name', '')
-                    
-                    result = self.geocode(address)
-                    if result:
-                        self.results.append({
-                            'name': name,
-                            'original_address': address,
-                            'normalized_address': result['normalized_address'],
-                            'matched_address': result['matched_address'],
-                            'raw_response': str(result['raw_response']),
-                            'latitude': result['latitude'],
-                            'longitude': result['longitude']
-                        })
-                    
-                    # バッチサイズに達したら保存
-                    if len(self.results) >= self.batch_size:
-                        self._save_batch()
-                    
-                    time.sleep(1)  # API制限を考慮
-                
-                # 残りの結果を保存
-                if self.results:
-                    self._save_batch()
-                
-        except Exception as e:
-            print(f"Error processing addresses: {str(e)}")
-            if self.results:
-                self._save_batch(error=True)
+            print(f"Error geocoding address {address}: {e}")
+            return None, False
 
-    def _save_batch(self, error: bool = False):
-        """バッチ結果を保存"""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'geocoding_results_batch_{self.batch_num}_{timestamp}.csv'
-        if error:
-            filename = f'error_batch_{self.batch_num}_{timestamp}.csv'
-
-        with open(filename, 'w', encoding='utf-8', newline='') as f:
-            fieldnames = ['name', 'original_address', 'normalized_address',
-                         'matched_address', 'raw_response', 'latitude', 'longitude']
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(self.results)
-
-        print(f"\nバッチ {self.batch_num} の結果を {filename} に保存しました")
-        self.results = []  # 結果をクリア
-        self.batch_num += 1
-
-def generate_map_html(df: pd.DataFrame, output_file: str = 'map.html'):
-    """ジオコーディング結果を地図に表示"""
-    if df.empty:
-        print("No data to display on map")
-        return
+def process_dataframe(
+    df: pd.DataFrame,
+    address_column: str = 'address',
+    store_code_column: str = 'store_code',
+    store_name_column: str = 'store_name',
+    output_file: str = None
+) -> pd.DataFrame:
+    """
+    データフレームから住所を読み込み、緯度経度を取得して結果を返す
     
-    # 中心座標を計算
-    center_lat = df['lat'].mean()
-    center_lng = df['lng'].mean()
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        入力データフレーム
+    address_column : str
+        住所が格納されている列名
+    store_code_column : str
+        店舗コードが格納されている列名
+    store_name_column : str
+        店舗名が格納されている列名
+    output_file : str, optional
+        結果を保存するCSVファイルのパス
     
-    # 地図を作成
-    m = folium.Map(location=[center_lat, center_lng], zoom_start=12)
+    Returns:
+    --------
+    pd.DataFrame
+        緯度経度情報が追加されたデータフレーム
+    """
+    geocoder = GsiGeocoder()
+    results = []
     
-    # マーカーを追加
-    for _, row in df.iterrows():
-        popup_text = f"{row.get('name', '')}<br>{row['matched_address']}"
-        folium.Marker(
-            [row['lat'], row['lng']],
-            popup=popup_text,
-            tooltip=row.get('name', row['matched_address'])
-        ).add_to(m)
-    
-    # 国土地理院の利用規約に基づく出典表示
-    attribution = ('地理院地図の住所検索API (https://msearch.gsi.go.jp/address-search/AddressSearch) を使用'
-                  '<br>出典：国土地理院')
-    
-    # 出典情報を地図に追加
-    m.get_root().html.add_child(folium.Element(
-        f'<div style="position: fixed; bottom: 10px; left: 10px; '
-        f'background-color: white; padding: 5px; border-radius: 5px; '
-        f'z-index: 1000;">{attribution}</div>'
-    ))
-    
-    # 地図を保存
-    m.save(output_file)
-
-if __name__ == "__main__":
-    # 使用例
-    geocoder = GSIGeocoder()
-    
-    # 単一の住所のジオコーディング
-    result = geocoder.geocode("東京都渋谷区渋谷2-24-12")
-    if result:
-        print(f"単一住所の結果:")
-        print(f"緯度: {result['lat']}, 経度: {result['lng']}")
-        print(f"正規化された住所: {result['normalized_address']}")
-        print(f"マッチした住所: {result['matched_address']}\n")
-    
-    # 複数の住所の一括ジオコーディング
-    test_addresses = [
-        {
-            'name': '渋谷スクランブルスクエア',
-            'address': '東京都渋谷区渋谷2-24-12'
-        },
-        {
-            'name': '東京スカイツリー',
-            'address': '東京都墨田区押上1-1-2'
-        }
-    ]
-    
-    results_df = geocoder.batch_geocode(
-        test_addresses,
-        address_key='address',
-        name_key='name',
-        interval=0.5
-    )
-    
-    if not results_df.empty:
-        print("複数住所の結果:")
-        print(results_df)
+    # 各行の住所を処理
+    for idx, row in df.iterrows():
+        address = row.get(address_column)
+        store_code = row.get(store_code_column) if store_code_column in df.columns else None
+        store_name = row.get(store_name_column) if store_name_column in df.columns else None
         
-        # 地図を生成
-        generate_map_html(results_df, 'example_map.html') 
+        if pd.isna(address):
+            print(f"Warning: Missing address at index {idx}")
+            continue
+            
+        print(f"Processing: {store_name or 'Unknown store'} - {address}")
+        result, is_cached = geocoder.geocode(str(address), store_code, store_name)
+        
+        if result:
+            # 元のデータを保持しつつ、緯度経度情報を追加
+            result_row = row.to_dict()
+            result_row.update({
+                'normalized_address': result['normalized_address'],
+                'matched_address': result['matched_address'],
+                'latitude': result['latitude'],
+                'longitude': result['longitude'],
+                'similarity': result['similarity'],
+                'chome_match': result['chome_match'],
+                'banchi_match': result['banchi_match'],
+                'go_match': result['go_match']
+            })
+            results.append(result_row)
+            print(f"Success: {result['latitude']}, {result['longitude']}")
+        else:
+            print(f"Failed to geocode: {address}")
+        
+        # API制限を考慮して待機（キャッシュヒットの場合は待機しない）
+        if not is_cached:
+            time.sleep(0.5)
+    
+    # 結果をデータフレームに変換
+    result_df = pd.DataFrame(results)
+    
+    # 結果をCSVファイルに保存（指定がある場合）
+    if output_file:
+        result_df.to_csv(output_file, index=False, encoding='utf-8')
+        print(f"\nResults saved to {output_file}")
+    
+    print(f"Successfully geocoded {len(results)} addresses")
+    return result_df 

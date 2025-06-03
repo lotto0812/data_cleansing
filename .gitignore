@@ -20,14 +20,27 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
-venv/
-ENV/
+# Environment
+.env
+.venv
 env/
+venv/
+
+# Cache files
+geocoding_cache.json
+*.db
+
+# Test data
+test_data.csv
+test_*.csv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 
