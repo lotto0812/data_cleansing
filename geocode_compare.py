@@ -13,7 +13,7 @@ import unicodedata
 
 # .envファイルから環境変数を読み込む
 print("環境変数を読み込み中...")
-load_dotenv(verbose=True)  # verboseモードで詳細な情報を表示
+load_dotenv(verbose=True)
 
 def normalize_number(number: str) -> str:
     """数字を正規化（半角数字に統一）"""
@@ -43,36 +43,7 @@ def normalize_address_numbers(address: str) -> str:
     
     return normalized_address
 
-def get_google_coordinates(address: str, api_key: str) -> Tuple[float, float]:
-    """Google Maps APIを使用して緯度経度を取得"""
-    url = "https://maps.googleapis.com/maps/api/geocode/json"
-    params = {
-        "address": address,
-        "key": api_key,
-        "language": "ja",
-        "region": "jp"
-    }
-    
-    try:
-        print(f"\nGoogle Maps APIリクエストURL: {url}")
-        print(f"パラメータ: address={address}, key={api_key[:6]}...")
-        
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        
-        if data["status"] == "OK" and data["results"]:
-            location = data["results"][0]["geometry"]["location"]
-            return location["lat"], location["lng"]
-        else:
-            print(f"Google Maps API Error for {address}: {data['status']} - {data.get('error_message', 'No error message')}")
-            print(f"完全なレスポンス: {data}")
-            return None, None
-    except requests.exceptions.RequestException as e:
-        print(f"Request Error for {address}: {str(e)}")
-        return None, None
-
-def get_gsi_coordinates(address: str, geocoder: GSIGeocoder) -> Tuple[float, float, str, str]:
+def get_gsi_coordinates(address: str, geocoder: GSIGeocoder) -> Tuple[float, float, str, str, dict]:
     """国土地理院APIを使用して緯度経度を取得"""
     result = geocoder.geocode(address)
     if result and "latitude" in result and "longitude" in result:
@@ -80,23 +51,10 @@ def get_gsi_coordinates(address: str, geocoder: GSIGeocoder) -> Tuple[float, flo
             result["latitude"],
             result["longitude"],
             result.get("normalized_address", ""),
-            result.get("matched_address", "")
+            result.get("matched_address", ""),
+            result.get("raw_response", {})  # 生データを追加
         )
-    return None, None, "", ""
-
-def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """2点間の距離をメートルで計算（Haversine formula）"""
-    R = 6371000  # 地球の半径（メートル）
-
-    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-    c = 2 * atan2(sqrt(a), sqrt(1-a))
-    distance = R * c
-
-    return distance
+    return None, None, "", "", {}
 
 def calculate_address_similarity(addr1: str, addr2: str) -> float:
     """2つの住所の類似度を計算（改善版）"""
@@ -147,30 +105,24 @@ def analyze_address_match_level(normalized: str, matched: str) -> Dict[str, bool
         'go_match': go_match
     }
 
-def save_batch_results(results: List[Dict], batch_num: int):
-    """バッチ結果をCSVファイルに保存"""
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    filename = f'gsi_geocoding_results_batch_{batch_num}_{timestamp}.csv'
-    
+def save_results(results: List[Dict], filename: str = 'gsi_geocoding_results.csv'):
+    """結果をCSVファイルに保存"""
     with open(filename, 'w', encoding='utf-8', newline='') as f:
         fieldnames = ['name', 'original_address', 'normalized_address', 
-                     'matched_address', 'address_similarity', 
+                     'matched_address', 'raw_response', 'address_similarity', 
                      'chome_match', 'banchi_match', 'go_match',
                      'latitude', 'longitude']
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(results)
     
-    print(f"\nバッチ {batch_num} の結果を {filename} に保存しました")
+    print(f"\n結果を {filename} に保存しました")
 
 def analyze_gsi_results():
     """国土地理院のジオコーディング結果を分析"""
     # GSIジオコーダーの初期化
     gsi_geocoder = GSIGeocoder()
     results = []
-    batch_size = 10000
-    batch_num = 1
-    total_processed = 0
     
     print("=== 国土地理院ジオコーディング結果 ===\n")
     
@@ -187,13 +139,9 @@ def analyze_gsi_results():
                 print(f"入力住所: {address}")
                 
                 # 国土地理院の座標を取得
-                result = gsi_geocoder.geocode(address)
-                if result:
-                    normalized_addr = result.get("normalized_address", "")
-                    matched_addr = result.get("matched_address", "")
-                    lat = result.get("lat")
-                    lng = result.get("lng")
-                    
+                lat, lng, normalized_addr, matched_addr, raw_response = get_gsi_coordinates(address, gsi_geocoder)
+                
+                if lat and lng:
                     # 住所の類似度を計算
                     similarity = calculate_address_similarity(normalized_addr, matched_addr)
                     
@@ -206,15 +154,15 @@ def analyze_gsi_results():
                     print(f"マッチングレベル: 丁目={match_levels['chome_match']}, "
                           f"番地={match_levels['banchi_match']}, "
                           f"号={match_levels['go_match']}")
-                    
-                    if lat and lng:
-                        print(f"緯度経度: {lat}, {lng}")
+                    print(f"緯度経度: {lat}, {lng}")
+                    print(f"生データ: {raw_response}")
                     
                     results.append({
                         'name': name,
                         'original_address': address,
                         'normalized_address': normalized_addr,
                         'matched_address': matched_addr,
+                        'raw_response': str(raw_response),
                         'address_similarity': f"{similarity:.2f}",
                         'chome_match': match_levels['chome_match'],
                         'banchi_match': match_levels['banchi_match'],
@@ -225,30 +173,20 @@ def analyze_gsi_results():
                 else:
                     print("ジオコーディング結果なし")
                 
-                total_processed += 1
-                
-                # バッチサイズに達したら結果を保存
-                if len(results) >= batch_size:
-                    save_batch_results(results, batch_num)
-                    results = []  # 結果をクリア
-                    batch_num += 1
-                
                 # API制限を考慮して待機
                 time.sleep(1)
         
-        # 残りの結果があれば保存
-        if results:
-            save_batch_results(results, batch_num)
+        # 結果を保存
+        save_results(results)
         
         print(f"\n=== 処理完了 ===")
-        print(f"総処理件数: {total_processed}")
-        print(f"出力バッチ数: {batch_num}")
+        print(f"総処理件数: {len(results)}")
         
     except Exception as e:
         print(f"\nエラーが発生しました: {str(e)}")
         # エラーが発生した時点での結果を保存
         if results:
-            save_batch_results(results, f"error_{batch_num}")
+            save_results(results, f"error_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
 
 if __name__ == "__main__":
     analyze_gsi_results() 

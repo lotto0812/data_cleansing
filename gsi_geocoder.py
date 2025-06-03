@@ -5,16 +5,21 @@ import time
 from typing import Dict, List, Optional, Union
 from address_normalizer import JapaneseAddressNormalizer
 import re
+from datetime import datetime
+import csv
 
 class GSIGeocoder:
     """国土地理院APIを使用した住所ジオコーディングクラス"""
     
     def __init__(self):
-        self.base_url = "https://msearch.gsi.go.jp/address-search/AddressSearch"
         self.normalizer = JapaneseAddressNormalizer()
+        self.base_url = "https://msearch.gsi.go.jp/address-search/AddressSearch"
+        self.results = []
+        self.batch_size = 10000
+        self.batch_num = 1
     
-    def geocode(self, address: str) -> Optional[Dict[str, Union[float, str]]]:
-        """単一の住所を緯度経度に変換"""
+    def geocode(self, address: str) -> Optional[Dict]:
+        """住所をジオコーディング"""
         # 住所の正規化
         normalized_address = self.normalizer.normalize_address(address)
         
@@ -25,57 +30,75 @@ class GSIGeocoder:
         try:
             response = requests.get(self.base_url, params=params)
             response.raise_for_status()
-            results = response.json()
+            data = response.json()
             
-            if results and len(results) > 0:
-                # 最も関連性の高い結果を使用
-                result = results[0]
-                coordinates = result['geometry']['coordinates']
-                matched_address = result.get('properties', {}).get('title', '')
-                
+            if data and len(data) > 0:
+                result = data[0]
                 return {
-                    'lat': float(coordinates[1]),  # 緯度
-                    'lng': float(coordinates[0]),  # 経度
-                    'original_address': address,
-                    'normalized_address': normalized_address,
-                    'matched_address': matched_address  # 国土地理院APIからの生の住所データ
+                    "latitude": float(result.get("geometry", {}).get("coordinates", [])[1]),
+                    "longitude": float(result.get("geometry", {}).get("coordinates", [])[0]),
+                    "normalized_address": normalized_address,
+                    "matched_address": result.get("properties", {}).get("title", ""),
+                    "raw_response": result  # 生データを追加
                 }
-            
-        except requests.exceptions.RequestException as e:
-            print(f"Error geocoding address '{address}': {str(e)}")
-        except (KeyError, IndexError, ValueError) as e:
-            print(f"Error parsing response for address '{address}': {str(e)}")
-        
+        except Exception as e:
+            print(f"Error geocoding {address}: {str(e)}")
         return None
     
-    def batch_geocode(self, 
-                     addresses: List[Dict[str, str]], 
-                     address_key: str = 'address',
-                     name_key: Optional[str] = None,
-                     interval: float = 0.5) -> pd.DataFrame:
-        """複数の住所を一括で緯度経度に変換"""
-        results = []
-        total = len(addresses)
-        
-        for i, item in enumerate(addresses, 1):
-            address = item[address_key]
-            name = item.get(name_key, '') if name_key else ''
-            
-            print(f"\r処理中... {i}/{total} ({(i/total)*100:.1f}%)", end='')
-            
-            result = self.geocode(address)
-            if result:
-                result['name'] = name
-                results.append(result)
-            else:
-                print(f"\n変換失敗: {address}")
-            
-            # APIリクエスト間隔を制御
-            if i < total:  # 最後の要素以外で待機
-                time.sleep(interval)
-        
-        print("\n処理完了")
-        return pd.DataFrame(results)
+    def process_addresses(self, input_file: str):
+        """住所を一括処理"""
+        try:
+            with open(input_file, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                
+                for row in reader:
+                    address = row['address']
+                    name = row.get('name', '')
+                    
+                    result = self.geocode(address)
+                    if result:
+                        self.results.append({
+                            'name': name,
+                            'original_address': address,
+                            'normalized_address': result['normalized_address'],
+                            'matched_address': result['matched_address'],
+                            'raw_response': str(result['raw_response']),
+                            'latitude': result['latitude'],
+                            'longitude': result['longitude']
+                        })
+                    
+                    # バッチサイズに達したら保存
+                    if len(self.results) >= self.batch_size:
+                        self._save_batch()
+                    
+                    time.sleep(1)  # API制限を考慮
+                
+                # 残りの結果を保存
+                if self.results:
+                    self._save_batch()
+                
+        except Exception as e:
+            print(f"Error processing addresses: {str(e)}")
+            if self.results:
+                self._save_batch(error=True)
+
+    def _save_batch(self, error: bool = False):
+        """バッチ結果を保存"""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'geocoding_results_batch_{self.batch_num}_{timestamp}.csv'
+        if error:
+            filename = f'error_batch_{self.batch_num}_{timestamp}.csv'
+
+        with open(filename, 'w', encoding='utf-8', newline='') as f:
+            fieldnames = ['name', 'original_address', 'normalized_address',
+                         'matched_address', 'raw_response', 'latitude', 'longitude']
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(self.results)
+
+        print(f"\nバッチ {self.batch_num} の結果を {filename} に保存しました")
+        self.results = []  # 結果をクリア
+        self.batch_num += 1
 
 def generate_map_html(df: pd.DataFrame, output_file: str = 'map.html'):
     """ジオコーディング結果を地図に表示"""
