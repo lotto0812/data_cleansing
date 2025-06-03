@@ -4,6 +4,7 @@ import folium
 import time
 from typing import Dict, List, Optional, Union
 from address_normalizer import JapaneseAddressNormalizer
+import re
 
 class GSIGeocoder:
     """国土地理院APIを使用した住所ジオコーディングクラス"""
@@ -16,6 +17,12 @@ class GSIGeocoder:
         """単一の住所を緯度経度に変換"""
         # 住所の正規化
         normalized_address = self.normalizer.normalize_address(address)
+        
+        # 元の号番号を抽出
+        original_number = None
+        number_match = re.search(r'(\d+(?:-\d+)*)', address)
+        if number_match:
+            original_number = number_match.group(1)
         
         params = {
             "q": normalized_address
@@ -30,14 +37,18 @@ class GSIGeocoder:
                 # 最も関連性の高い結果を使用
                 result = results[0]
                 coordinates = result['geometry']['coordinates']
+                matched_address = result.get('properties', {}).get('title', '')
                 
-                # 国土地理院APIは [経度, 緯度] の順で返すので注意
+                # 号番号が欠落している場合、元の番号を追加
+                if original_number and not re.search(rf'{original_number}(?:号|番地?)', matched_address):
+                    matched_address = f"{matched_address}{original_number}番"
+                
                 return {
                     'lat': float(coordinates[1]),  # 緯度
                     'lng': float(coordinates[0]),  # 経度
                     'original_address': address,
                     'normalized_address': normalized_address,
-                    'matched_address': result.get('properties', {}).get('title', '')
+                    'matched_address': matched_address
                 }
             
         except requests.exceptions.RequestException as e:
