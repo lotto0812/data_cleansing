@@ -42,7 +42,7 @@ def main():
     total_count = len(df)
     print(f"読み込み完了: {total_count}件")
     print("\n=== 変換前の住所サンプル ===")
-    print(df[['name', 'address']].head())
+    print(df[['store_code', 'name', 'address']].head())
     
     # 進捗トラッカーの初期化
     progress = ProgressTracker(total_count)
@@ -51,10 +51,12 @@ def main():
         """住所処理の進捗を表示するコールバック関数"""
         # 類似度が0.2未満の場合は詳細を表示
         similarity = result.get('similarity', 0.0)
-        message = f"処理中: {store_name}"
+        store_code = result.get('store_code', '不明')
+        message = f"処理中: [{store_code}] {store_name}"
         
         if similarity < 0.2:
             print(f"\n\n低類似度アラート（{similarity:.2f}）:")
+            print(f"店舗コード: {store_code}")
             print(f"店舗名: {store_name}")
             print(f"入力住所: {address}")
             print(f"マッチした住所: {result.get('matched_address', '不明')}")
@@ -67,6 +69,7 @@ def main():
     result_df = process_dataframe(
         df,
         address_column='address',
+        store_code_column='store_code',
         store_name_column='name',
         output_file='geocoding_results.csv',
         progress_callback=progress_callback
