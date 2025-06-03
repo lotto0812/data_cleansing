@@ -24,7 +24,10 @@ def normalize_number(number: str) -> str:
 
 def normalize_address_numbers(address: str) -> str:
     """
-    住所の数字を正規化する（全角→半角、漢数字→アラビア数字）
+    住所の数字を正規化する
+    - 丁目・番地・号の前の漢数字のみをアラビア数字に変換
+    - その他の漢数字（地名等）はそのまま保持
+    - 全角数字は半角数字に変換
     
     Parameters:
     -----------
@@ -39,11 +42,15 @@ def normalize_address_numbers(address: str) -> str:
     # 全角数字を半角に変換
     normalized = address.translate(str.maketrans('０１２３４５６７８９', '0123456789'))
     
-    # 漢数字をアラビア数字に変換（一～九のみ対応）
-    kanji_numbers = {'一': '1', '二': '2', '三': '3', '四': '4', '五': '5',
-                    '六': '6', '七': '7', '八': '8', '九': '9'}
-    for k, v in kanji_numbers.items():
-        normalized = normalized.replace(k, v)
+    # 丁目・番地・号の前の漢数字のみをアラビア数字に変換
+    kanji_numbers = {
+        '一': '1', '二': '2', '三': '3', '四': '4', '五': '5',
+        '六': '6', '七': '7', '八': '8', '九': '9'
+    }
+    
+    # 丁目・番地・号の前の漢数字のみを変換
+    for kanji, arabic in kanji_numbers.items():
+        normalized = re.sub(f'{kanji}(?=(丁目|番地?|号))', arabic, normalized)
     
     return normalized
 
@@ -110,7 +117,7 @@ def calculate_address_similarity(address1: str, address2: str) -> float:
     float
         類似度（0.0～1.0）
     """
-    # 数字を正規化
+    # 数字を正規化（地名の漢数字は保持）
     norm1 = normalize_address_numbers(address1)
     norm2 = normalize_address_numbers(address2)
     
@@ -148,7 +155,7 @@ def analyze_address_match_level(input_address: str, matched_address: str) -> Dic
     Dict[str, bool]
         各レベル（丁目、番地、号）のマッチング結果
     """
-    # 数字を正規化
+    # 数字を正規化（地名の漢数字は保持）
     input_norm = normalize_address_numbers(input_address)
     matched_norm = normalize_address_numbers(matched_address)
     
