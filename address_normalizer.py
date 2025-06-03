@@ -9,7 +9,7 @@ class JapaneseAddressNormalizer:
         self.prefecture_patterns = {
             r'北海道': '北海道',
             r'東京都?': '東京都',
-            r'大阪[府県]?': '大阪府',
+            r'大阪[府県]?市?': '大阪府',
             r'京都府?': '京都府',
             r'神奈川県?': '神奈川県',
             r'埼玉県?': '埼玉県',
@@ -30,6 +30,17 @@ class JapaneseAddressNormalizer:
             r'ビル(?:ディング)?': 'ビル',
             r'マンション': 'マンション',
             r'アパート': 'アパート',
+        }
+        
+        # 政令指定都市の正規表現パターン
+        self.city_patterns = {
+            r'大阪市': '大阪市',
+            r'京都市': '京都市',
+            r'神戸市': '神戸市',
+            r'名古屋市': '名古屋市',
+            r'横浜市': '横浜市',
+            r'札幌市': '札幌市',
+            # 他の政令指定都市も同様に追加可能
         }
 
     def normalize_address(self, address: str) -> str:
@@ -69,6 +80,13 @@ class JapaneseAddressNormalizer:
         """都道府県名を正規化"""
         for pattern, replacement in self.prefecture_patterns.items():
             address = re.sub(f"^{pattern}", replacement, address)
+        
+        # 政令指定都市の処理
+        for pattern, replacement in self.city_patterns.items():
+            if re.search(pattern, address):
+                # 都道府県名の後に市名を挿入
+                address = re.sub(f"^({list(self.prefecture_patterns.values())[0]}|{list(self.prefecture_patterns.values())[1]}|{list(self.prefecture_patterns.values())[2]})(.+)?", f"\\1{replacement}\\2", address)
+        
         return address
 
     def _normalize_chome_banchi(self, address: str) -> str:
