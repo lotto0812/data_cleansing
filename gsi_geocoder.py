@@ -20,7 +20,7 @@ class GSIGeocoder:
         
         # 元の号番号を抽出
         original_number = None
-        number_match = re.search(r'(\d+(?:-\d+)*)', address)
+        number_match = re.search(r'(\d+(?:-\d+)+)$', address)
         if number_match:
             original_number = number_match.group(1)
         
@@ -41,7 +41,11 @@ class GSIGeocoder:
                 
                 # 号番号が欠落している場合、元の番号を追加
                 if original_number and not re.search(rf'{original_number}(?:号|番地?)', matched_address):
-                    matched_address = f"{matched_address}{original_number}番"
+                    # 番地がある場合は、その後に号番号を追加
+                    if '番地' in matched_address:
+                        matched_address = f"{matched_address}-{original_number}"
+                    else:
+                        matched_address = f"{matched_address}{original_number}号"
                 
                 return {
                     'lat': float(coordinates[1]),  # 緯度
