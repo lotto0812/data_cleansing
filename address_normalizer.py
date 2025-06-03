@@ -9,7 +9,7 @@ class JapaneseAddressNormalizer:
         self.prefecture_patterns = {
             r'北海道': '北海道',
             r'東京都?': '東京都',
-            r'大阪[府県]?市?': '大阪府',
+            r'大阪府?(?!市)': '大阪府',  # 「大阪市」にマッチしないように修正
             r'京都府?': '京都府',
             r'神奈川県?': '神奈川県',
             r'埼玉県?': '埼玉県',
@@ -20,7 +20,7 @@ class JapaneseAddressNormalizer:
         
         # 政令指定都市の正規表現パターン
         self.city_patterns = {
-            r'大阪市': '大阪市',
+            r'^大阪市': '大阪府大阪市',  # 先頭の「大阪市」を「大阪府大阪市」に変換
             r'京都市': '京都市',
             r'神戸市': '神戸市',
             r'名古屋市': '名古屋市',
@@ -73,18 +73,16 @@ class JapaneseAddressNormalizer:
         # 番地号を抽出
         base_address, house_number = self._extract_house_number(address)
         
-        # 都道府県の正規化
-        normalized_address = self._normalize_prefecture(base_address)
-        
-        # 政令指定都市の処理
+        # 政令指定都市の処理（都道府県の前に実行）
+        normalized_address = base_address
         for pattern, replacement in self.city_patterns.items():
-            if re.search(pattern, normalized_address):
-                # 都道府県名の後に市名を挿入
-                normalized_address = re.sub(
-                    f"^({list(self.prefecture_patterns.values())[0]}|{list(self.prefecture_patterns.values())[1]}|{list(self.prefecture_patterns.values())[2]})",
-                    f"\\1{replacement}",
-                    normalized_address
-                )
+            if re.match(pattern, normalized_address):
+                normalized_address = re.sub(pattern, replacement, normalized_address)
+                break
+        
+        # 都道府県の正規化
+        for pattern, replacement in self.prefecture_patterns.items():
+            normalized_address = re.sub(f"^{pattern}", replacement, normalized_address)
         
         # 町丁目番地の正規化
         for pattern, replacement in self.chome_patterns.items():
@@ -110,13 +108,6 @@ class JapaneseAddressNormalizer:
         # 複数の空白を1つに
         text = re.sub(r'\s+', ' ', text)
         return text
-
-    def _normalize_prefecture(self, address: str) -> str:
-        """都道府県名を正規化"""
-        for pattern, replacement in self.prefecture_patterns.items():
-            address = re.sub(f"^{pattern}", replacement, address)
-        
-        return address
 
     def extract_components(self, address: str) -> Dict[str, Optional[str]]:
         """住所から構成要素を抽出する"""
