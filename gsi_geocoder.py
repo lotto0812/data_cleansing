@@ -118,7 +118,8 @@ def process_dataframe(
     address_column: str = 'address',
     store_code_column: str = 'store_code',
     store_name_column: str = 'store_name',
-    output_file: str = None
+    output_file: str = None,
+    progress_callback = None
 ) -> pd.DataFrame:
     """
     データフレームから住所を読み込み、緯度経度を取得して結果を返す
@@ -135,6 +136,9 @@ def process_dataframe(
         店舗名が格納されている列名
     output_file : str, optional
         結果を保存するCSVファイルのパス
+    progress_callback : callable, optional
+        進捗を報告するコールバック関数。
+        store_name, address, resultを引数として受け取る
     
     Returns:
     --------
@@ -154,7 +158,6 @@ def process_dataframe(
             print(f"Warning: Missing address at index {idx}")
             continue
             
-        print(f"Processing: {store_name or 'Unknown store'} - {address}")
         result, is_cached = geocoder.geocode(str(address), store_code, store_name)
         
         if result:
@@ -171,9 +174,10 @@ def process_dataframe(
                 'go_match': result['go_match']
             })
             results.append(result_row)
-            print(f"Success: {result['latitude']}, {result['longitude']}")
-        else:
-            print(f"Failed to geocode: {address}")
+        
+        # 進捗コールバックを呼び出し
+        if progress_callback:
+            progress_callback(store_name or 'Unknown store', address, result or {})
         
         # API制限を考慮して待機（キャッシュヒットの場合は待機しない）
         if not is_cached:
