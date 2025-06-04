@@ -156,7 +156,8 @@ def process_dataframe(
     Returns:
     --------
     pd.DataFrame
-        緯度経度情報が追加されたデータフレーム
+        緯度経度情報が追加されたデータフレーム。
+        マッチしなかったデータも含む（緯度経度情報はNaN）
     """
     geocoder = GsiGeocoder()
     results = []
@@ -169,13 +170,28 @@ def process_dataframe(
         
         if pd.isna(address):
             print(f"Warning: Missing address at index {idx}")
+            result_row = row.to_dict()
+            result_row.update({
+                'normalized_address': None,
+                'matched_address': None,
+                'latitude': None,
+                'longitude': None,
+                'similarity': 0.0,
+                'chome_match': False,
+                'banchi_match': False,
+                'go_match': False,
+                'match_status': 'missing_address'
+            })
+            results.append(result_row)
             continue
             
         result, is_cached = geocoder.geocode(str(address), store_code, store_name)
         
+        # 元のデータを保持しつつ、緯度経度情報を追加
+        result_row = row.to_dict()
+        
         if result:
-            # 元のデータを保持しつつ、緯度経度情報を追加
-            result_row = row.to_dict()
+            # マッチした場合
             result_row.update({
                 'normalized_address': result['normalized_address'],
                 'matched_address': result['matched_address'],
@@ -184,9 +200,24 @@ def process_dataframe(
                 'similarity': result['similarity'],
                 'chome_match': result['chome_match'],
                 'banchi_match': result['banchi_match'],
-                'go_match': result['go_match']
+                'go_match': result['go_match'],
+                'match_status': 'matched'
             })
-            results.append(result_row)
+        else:
+            # マッチしなかった場合
+            result_row.update({
+                'normalized_address': normalize_address_numbers(str(address)),
+                'matched_address': None,
+                'latitude': None,
+                'longitude': None,
+                'similarity': 0.0,
+                'chome_match': False,
+                'banchi_match': False,
+                'go_match': False,
+                'match_status': 'unmatched'
+            })
+        
+        results.append(result_row)
         
         # 進捗コールバックを呼び出し
         if progress_callback:
@@ -199,10 +230,8 @@ def process_dataframe(
     # 結果をデータフレームに変換
     result_df = pd.DataFrame(results)
     
-    # 結果をCSVファイルに保存（指定がある場合）
+    # 結果をファイルに保存
     if output_file:
         result_df.to_csv(output_file, index=False, encoding='utf-8')
-        print(f"\nResults saved to {output_file}")
     
-    print(f"Successfully geocoded {len(results)} addresses")
     return result_df 
