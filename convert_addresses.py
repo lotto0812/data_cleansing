@@ -6,6 +6,9 @@ import pandas as pd
 from gsi_geocoder import process_dataframe
 import sys
 import time
+import os
+from math import ceil
+from datetime import datetime
 
 class ProgressTracker:
     def __init__(self, total):
@@ -24,17 +27,8 @@ class ProgressTracker:
             sys.stdout.write('\n')
             sys.stdout.flush()
 
-def main():
-    # サンプルデータの読み込み
-    print("レストランデータを読み込み中...")
-    df = pd.read_csv('sample_restaurants.csv', encoding='utf-8')
-    
-    total_count = len(df)
-    print(f"読み込み完了: {total_count}件")
-    
-    # 進捗トラッカーの初期化
-    progress = ProgressTracker(total_count)
-    
+def process_batch(df_batch, batch_num, timestamp, progress):
+    """バッチ単位でデータを処理する"""
     def progress_callback(store_name: str, address: str, result: dict) -> None:
         """住所処理の進捗を表示するコールバック関数"""
         # 類似度が0.2未満の場合のみ詳細を表示
@@ -51,25 +45,73 @@ def main():
         
         # 進捗バーの更新（表示なし）
         progress.update("")
+
+    output_file = f'geocoding_results_{timestamp}_batch_{str(batch_num).zfill(2)}.csv'
     
     # 緯度経度の取得
-    print("\n住所の緯度経度を取得中...")
     result_df = process_dataframe(
-        df,
-        address_column='address',
-        store_code_column='store_code',
-        store_name_column='name',
-        output_file='geocoding_results.csv',
+        df_batch,
+        address_column='ADDRESS',
+        store_code_column='SAKAYA_DEALER_CODE',
+        store_name_column='SAKAYA_DEALER_NAME',
+        output_file=output_file,
         progress_callback=progress_callback
     )
     
-    # 類似度が0.2未満の結果の集計
-    low_similarity = result_df[result_df['similarity'] < 0.2]
+    return result_df, output_file
+
+def main():
+    BATCH_SIZE = 10
     
-    print("\n=== 処理完了 ===")
+    # 実行時のタイムスタンプを取得（YYYYMMDDHHmm形式）
+    timestamp = datetime.now().strftime('%Y%m%d%H%M')
+    
+    # サンプルデータの読み込み
+    print("酒屋データを読み込み中...")
+    df = pd.read_csv('sample_restaurants.csv', encoding='utf-8')
+    
+    total_count = len(df)
+    print(f"読み込み完了: {total_count}件")
+    
+    # バッチ数の計算
+    num_batches = ceil(total_count / BATCH_SIZE)
+    all_low_similarity = []
+    output_files = []
+    
+    print(f"\n{num_batches}バッチに分けて処理を実行します（1バッチ={BATCH_SIZE}件）")
+    
+    for batch_num in range(num_batches):
+        start_idx = batch_num * BATCH_SIZE
+        end_idx = min((batch_num + 1) * BATCH_SIZE, total_count)
+        df_batch = df.iloc[start_idx:end_idx].copy()
+        
+        print(f"\nバッチ {batch_num + 1}/{num_batches} の処理を開始（{start_idx + 1}～{end_idx}件目）")
+        
+        # バッチごとの進捗トラッカーの初期化
+        progress = ProgressTracker(len(df_batch))
+        
+        # バッチ処理の実行
+        result_df, output_file = process_batch(df_batch, batch_num + 1, timestamp, progress)
+        output_files.append(output_file)
+        
+        # 低類似度データの収集
+        low_similarity_batch = result_df[result_df['similarity'] < 0.2]
+        all_low_similarity.append(low_similarity_batch)
+        
+        print(f"\nバッチ {batch_num + 1} の処理完了:")
+        print(f"処理件数: {len(df_batch)}件")
+        print(f"低類似度件数: {len(low_similarity_batch)}件")
+        print(f"結果を {output_file} に保存しました")
+    
+    # 全バッチの結果を統合
+    total_low_similarity = pd.concat(all_low_similarity) if all_low_similarity else pd.DataFrame()
+    
+    print("\n=== 全体の処理完了 ===")
     print(f"総処理件数: {total_count}件")
-    print(f"低類似度件数: {len(low_similarity)}件")
-    print(f"結果を geocoding_results.csv に保存しました")
+    print(f"総低類似度件数: {len(total_low_similarity)}件")
+    print("\n出力ファイル:")
+    for file in output_files:
+        print(f"- {file}")
 
 if __name__ == '__main__':
     main() 
