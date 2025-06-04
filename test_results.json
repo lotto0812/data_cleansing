@@ -1,0 +1,160 @@
+{
+  "test_time": "2025-06-04 23:43:55",
+  "total_cases": 15,
+  "cases_with_changes": 8,
+  "results": [
+    {
+      "description": "基本的な市町村合併",
+      "input": "長崎県西彼杵郡多良見町下郡1234",
+      "output": "諫早市下郡1234",
+      "changes": [
+        {
+          "old": "長崎県西彼杵郡多良見町",
+          "new": "諫早市",
+          "merge_date": "平成17年3月1日"
+        }
+      ],
+      "has_changes": true
+    },
+    {
+      "description": "政令指定都市（変更なし）",
+      "input": "静岡県静岡市葵区追手町1234",
+      "output": "静岡県静岡市葵区追手町1234",
+      "changes": [],
+      "has_changes": false
+    },
+    {
+      "description": "政令指定都市（変更なし）",
+      "input": "新潟県新潟市中央区西堀通1234",
+      "output": "新潟県新潟市中央区西堀通1234",
+      "changes": [],
+      "has_changes": false
+    },
+    {
+      "description": "複数回合併した市",
+      "input": "広島県福山市1234",
+      "output": "福山市1234",
+      "changes": [
+        {
+          "old": "広島県福山市",
+          "new": "福山市",
+          "merge_date": "平成18年3月1日"
+        }
+      ],
+      "has_changes": true
+    },
+    {
+      "description": "複数回合併した市",
+      "input": "新潟県長岡市1234",
+      "output": "長岡市1234",
+      "changes": [
+        {
+          "old": "新潟県長岡市",
+          "new": "長岡市",
+          "merge_date": "平成18年1月1日"
+        }
+      ],
+      "has_changes": true
+    },
+    {
+      "description": "分割された村",
+      "input": "山梨県西八代郡上九一色村1234",
+      "output": "甲府市1234",
+      "changes": [
+        {
+          "old": "山梨県西八代郡上九一色村",
+          "new": "甲府市",
+          "merge_date": "平成18年3月1日"
+        }
+      ],
+      "has_changes": true
+    },
+    {
+      "description": "新市名に旧市町村名を含む",
+      "input": "広島県福山市新市町1234",
+      "output": "福山市新市町1234",
+      "changes": [
+        {
+          "old": "広島県福山市",
+          "new": "福山市",
+          "merge_date": "平成18年3月1日"
+        }
+      ],
+      "has_changes": true
+    },
+    {
+      "description": "スペースを含む",
+      "input": "長崎県 西彼杵郡 多良見町 1234",
+      "output": "諫早市1234",
+      "changes": [
+        {
+          "old": "長崎県西彼杵郡多良見町",
+          "new": "諫早市",
+          "merge_date": "平成17年3月1日"
+        }
+      ],
+      "has_changes": true
+    },
+    {
+      "description": "全角数字",
+      "input": "長崎県西彼杵郡多良見町１２３４",
+      "output": "諫早市１２３４",
+      "changes": [
+        {
+          "old": "長崎県西彼杵郡多良見町",
+          "new": "諫早市",
+          "merge_date": "平成17年3月1日"
+        }
+      ],
+      "has_changes": true
+    },
+    {
+      "description": "変更のない住所",
+      "input": "東京都新宿区西新宿1234",
+      "output": "東京都新宿区西新宿1234",
+      "changes": [],
+      "has_changes": false
+    },
+    {
+      "description": "空の文字列",
+      "input": "",
+      "output": "",
+      "changes": [],
+      "has_changes": false
+    },
+    {
+      "description": "都道府県名なし",
+      "input": "新宿区1234",
+      "output": "新宿区1234",
+      "changes": [],
+      "has_changes": false
+    },
+    {
+      "description": "全角スペース",
+      "input": "東京都新宿区　歌舞伎町　1234",
+      "output": "東京都新宿区歌舞伎町1234",
+      "changes": [],
+      "has_changes": false
+    },
+    {
+      "description": "建物名を含む政令指定都市",
+      "input": "静岡県静岡市葵区追手町9番地の50 静岡県庁舎別館",
+      "output": "静岡県静岡市葵区追手町9番地の50静岡県庁舎別館",
+      "changes": [],
+      "has_changes": false
+    },
+    {
+      "description": "建物名とフロア情報を含む",
+      "input": "長崎県西彼杵郡多良見町下郡1234-5678 ABCビル9F",
+      "output": "諫早市下郡1234-5678ABCビル9F",
+      "changes": [
+        {
+          "old": "長崎県西彼杵郡多良見町",
+          "new": "諫早市",
+          "merge_date": "平成17年3月1日"
+        }
+      ],
+      "has_changes": true
+    }
+  ]
+}

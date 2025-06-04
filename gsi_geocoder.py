@@ -5,7 +5,13 @@ import requests
 import os
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Union
-from address_utils import normalize_address_numbers, calculate_address_similarity, analyze_address_match_level
+from address_utils import (
+    normalize_address_numbers,
+    calculate_address_similarity,
+    analyze_address_match_level,
+    normalize_city_name_with_history,
+    improve_address_matching
+)
 
 class GsiGeocoder:
     """国土地理院APIを使用して住所から緯度経度を取得するクラス"""
@@ -49,8 +55,10 @@ class GsiGeocoder:
             return self.cache[cache_key], True
         
         try:
-            # 住所を正規化
-            normalized_address = normalize_address_numbers(address)
+            # 住所を正規化（市町村合併履歴を考慮）
+            normalized_address = normalize_city_name_with_history(
+                normalize_address_numbers(address)
+            )
             
             # APIリクエストパラメータ
             params = {'q': normalized_address}
@@ -65,17 +73,24 @@ class GsiGeocoder:
             if not results:
                 return None, False
             
-            # 最も類似度の高い結果を選択
-            best_match = None
-            highest_similarity = -1
+            # 候補住所のリストを作成
+            candidate_addresses = [
+                result.get('properties', {}).get('title', '')
+                for result in results
+            ]
             
+            # 改善された住所マッチングを使用
+            best_match_address, highest_similarity = improve_address_matching(
+                normalized_address,
+                candidate_addresses
+            )
+            
+            # 最適な結果を選択
+            best_match = None
             for result in results:
-                matched_address = result.get('properties', {}).get('title', '')
-                similarity = calculate_address_similarity(normalized_address, matched_address)
-                
-                if similarity > highest_similarity:
-                    highest_similarity = similarity
+                if result.get('properties', {}).get('title', '') == best_match_address:
                     best_match = result
+                    break
             
             if best_match:
                 # 緯度経度を取得

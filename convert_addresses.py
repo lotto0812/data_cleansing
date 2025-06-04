@@ -48,10 +48,21 @@ def process_batch(df_batch, batch_num, timestamp, progress):
 
     output_file = f'geocoding_results_{timestamp}_batch_{str(batch_num).zfill(2)}.csv'
     
+    # 都道府県情報を住所に追加
+    df_batch = df_batch.copy()
+    df_batch['normalized_address'] = df_batch.apply(
+        lambda row: (
+            f"{str(row['PREFECTURE'])}{row['ADDRESS']}" 
+            if pd.notna(row['PREFECTURE']) and pd.notna(row['ADDRESS']) and not str(row['ADDRESS']).startswith(str(row['PREFECTURE']))
+            else str(row['ADDRESS'])
+        ),
+        axis=1
+    )
+    
     # 緯度経度の取得
     result_df = process_dataframe(
         df_batch,
-        address_column='ADDRESS',
+        address_column='normalized_address',  # 都道府県を含む正規化された住所を使用
         store_code_column='SAKAYA_DEALER_CODE',
         store_name_column='SAKAYA_DEALER_NAME',
         output_file=output_file,
