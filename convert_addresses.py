@@ -72,7 +72,7 @@ def process_batch(df_batch, batch_num, timestamp, progress):
     return result_df, output_file
 
 def main():
-    BATCH_SIZE = 10
+    BATCH_SIZE = 10000  # バッチサイズを10000に変更
     
     # 実行時のタイムスタンプを取得（YYYYMMDDHHmm形式）
     timestamp = datetime.now().strftime('%Y%m%d%H%M')
