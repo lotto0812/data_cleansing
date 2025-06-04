@@ -9,6 +9,7 @@ import time
 import os
 from math import ceil
 from datetime import datetime
+from address_utils import is_valid_prefecture
 
 class ProgressTracker:
     def __init__(self, total):
@@ -53,7 +54,9 @@ def process_batch(df_batch, batch_num, timestamp, progress):
     df_batch['normalized_address'] = df_batch.apply(
         lambda row: (
             f"{str(row['PREFECTURE'])}{row['ADDRESS']}" 
-            if pd.notna(row['PREFECTURE']) and pd.notna(row['ADDRESS']) and not str(row['ADDRESS']).startswith(str(row['PREFECTURE']))
+            if pd.notna(row['PREFECTURE']) and pd.notna(row['ADDRESS']) 
+               and is_valid_prefecture(str(row['PREFECTURE']))  # 有効な都道府県名かどうかをチェック
+               and not str(row['ADDRESS']).startswith(str(row['PREFECTURE']))
             else str(row['ADDRESS'])
         ),
         axis=1
