@@ -57,9 +57,9 @@ def generate_valid_address():
 
 def main():
     """サンプルデータを生成してCSVに保存"""
-    # 100件のデータを生成
+    # 30件のデータを生成
     data = []
-    for i in range(100):
+    for i in range(30):
         store_code = f"S{str(i+1).zfill(4)}"
         name = generate_store_name()
         
@@ -70,9 +70,9 @@ def main():
             address = random.choice(INVALID_ADDRESSES)
         
         data.append({
-            'store_code': store_code,
-            'name': name,
-            'address': address
+            'SAKAYA_DEALER_CODE': store_code,
+            'SAKAYA_DEALER_NAME': name,
+            'ADDRESS': address
         })
     
     # DataFrameに変換
